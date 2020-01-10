@@ -11,12 +11,13 @@ import contract from 'truffle-contract';
 import jsonfile from 'jsonfile';
 import config from 'config';
 // eslint-disable-next-line import/extensions
-import zokrates from '@eyblockchain/zokrates.js';
+//import zokrates from '@eyblockchain/zokrates.js';
+import bulletproofs from '@hither1/bulletproofs.js';
 import fs from 'fs';
 import { merkleTree } from '@eyblockchain/nightlite';
 import utils from './zkpUtils';
 import zkp from './nf-token-zkp';
-import formatInputsForZkSnark from './format-inputs';
+import formatInputsForBulletproof from './format-inputs';
 import Element from './Element';
 import Web3 from './web3';
 import { getTruffleContractInstance } from './contractUtils';
@@ -31,6 +32,7 @@ const Verifier_Registry = contract(
 
 Verifier_Registry.setProvider(Web3.connect());
 
+//TO CHANGE
 const Verifier = contract(jsonfile.readFileSync('./build/contracts/GM17_v0.json'));
 Verifier.setProvider(Web3.connect());
 
@@ -205,29 +207,26 @@ function gasUsedStats(txReceipt, functionName) {
  * @param {String} blockchainOptions.nfTokenShieldJson - ABI of nfTokenShield
  * @param {String} blockchainOptions.nfTokenShieldAddress - Address of deployed nfTokenShieldContract
  * @param {String} blockchainOptions.account - Account that is sending these transactions
- * @param {Object} zokratesOptions
- * @param {String} zokratesOptions.codePath - Location of compiled code (without the .code suffix)
- * @param {String} [zokratesOptions.outputDirectory=./] - Directory to output all generated files
- * @param {String} [zokratesOptions.witnessName=witness] - Name of witness file
- * @param {String} [zokratesOptions.pkPath] - Location of the proving key file
- * @param {Boolean} zokratesOptions.createProofJson - Whether or not to create a proof.json file
- * @param {String} [zokratesOptions.proofName=proof.json] - Name of generated proof JSON.
+ * @param {Object} bulletproofsOptions
+ * @param {String} bulletproofOptions.genPath - Location of file storing Pedersen & Bulletproof Generators (used to generate proof)
+ * @param {String} [bulletproofOptions.outputDirectory=./] - Directory to output all generated files (proof, in_commitment, out_commitment)
+ * @param {String} [bulletproofOptions.pkPath] - Location of the proving key file
+ * @param {Boolean} bulletproofOptions.createProofJson - Whether or not to create a proof.json file
+ * @param {String} [bulletproofOptions.proofName=proof.json] - Name of generated proof JSON.
  * @returns {String} commitment
  * @returns {Number} commitmentIndex - the index of the token within the Merkle Tree.  This is required for later transfers/joins so that Alice knows which 'chunks' of the Merkle Tree she needs to 'get' from the NFTokenShield contract in order to calculate a path.
  */
-async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, zokratesOptions) {
+async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, bulletproofOptions) {
   const { nfTokenShieldJson, nfTokenShieldAddress } = blockchainOptions;
   const account = utils.ensure0x(blockchainOptions.account);
 
   const {
-    codePath,
+    genPath,
     outputDirectory,
-    witnessName = 'witness',
     pkPath,
-    provingScheme = 'gm17',
     createProofJson = true,
     proofName = 'proof.json',
-  } = zokratesOptions;
+  } = bulletproofOptions;
 
   const nfTokenShield = contract(nfTokenShieldJson);
   nfTokenShield.setProvider(Web3.connect());
@@ -250,9 +249,12 @@ async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, zokr
   );
 
   // Summarise values in the console:
+  // TODO:
+  // edit config
+  // change to bulletproof sizes
   console.group('Existing Proof Variables:');
-  const p = config.ZOKRATES_PACKING_SIZE; // packing size in bits
-  const pt = Math.ceil((config.LEAF_HASHLENGTH * 8) / config.ZOKRATES_PACKING_SIZE); // packets in bits
+  const p = config.BULLETPROOFS_PACKING_SIZE; // packing size in bits
+  const pt = Math.ceil((config.LEAF_HASHLENGTH * 8) / config.BULLETPROOFS_PACKING_SIZE); // packets in bits
   console.log('tokenId:', tokenId, ' : ', utils.hexToFieldPreserve(tokenId, p, pt));
   console.log(
     'ownerPublicKey:',
@@ -261,6 +263,8 @@ async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, zokr
     utils.hexToFieldPreserve(ownerPublicKey, p, pt),
   );
   console.log('salt:', salt, ' : ', utils.hexToFieldPreserve(salt, p, pt));
+
+
   console.groupEnd();
 
   console.group('New Proof Variables:');
@@ -270,7 +274,7 @@ async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, zokr
   const publicInputHash = utils.concatenateThenHash(tokenId, commitment);
   console.log('publicInputHash:', publicInputHash);
 
-  const allInputs = formatInputsForZkSnark([
+  const allInputs = formatInputsForBulletproof([
     new Element(publicInputHash, 'field', 248, 1),
     new Element(tokenId, 'field'),
     new Element(ownerPublicKey, 'field'),
@@ -278,9 +282,7 @@ async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, zokr
     new Element(commitment, 'field'),
   ]);
 
-  await zokrates.computeWitness(codePath, outputDirectory, witnessName, allInputs);
-
-  await zokrates.generateProof(pkPath, codePath, `${outputDirectory}/witness`, provingScheme, {
+  await bulletproofs.generateProof(pkPath, genPath, {
     createFile: createProofJson,
     directory: outputDirectory,
     fileName: proofName,
@@ -308,7 +310,7 @@ async function mint(tokenId, ownerPublicKey, salt, vkId, blockchainOptions, zokr
 
   console.group('Minting within the Shield contract');
 
-  const publicInputs = formatInputsForZkSnark([new Element(publicInputHash, 'field', 248, 1)]);
+  const publicInputs = formatInputsForBulletproof([new Element(publicInputHash, 'field', 248, 1)]);
 
   console.log('proof:');
   console.log(proof);

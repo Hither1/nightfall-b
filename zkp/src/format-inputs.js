@@ -14,7 +14,7 @@ Note that we don't always encode these numbers in the same way (sometimes they a
 @param {array} elements - the array of Element objects that represent the parameters we wish to encode for ZoKrates.
 */
 
-export default function formatInputsForZkSnark(elements) {
+export default function formatInputsForBulletproof(elements) {
   let a = [];
   elements.forEach(element => {
     switch (element.encoding) {
